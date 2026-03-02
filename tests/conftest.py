@@ -5,7 +5,7 @@ from importlib import import_module
 
 import pytest
 import pytest_asyncio
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, AsyncMock
 from datetime import datetime
 from pathlib import Path
 import io
@@ -102,6 +102,9 @@ def mock_camera_controller() -> MagicMock:
     Image.new("RGB", (1, 1), color=(0, 0, 0)).save(preview_buffer, format="JPEG")
     controller.preview.return_value = preview_buffer.getvalue()
     controller.camera.name = "mock_camera"
+    async def _photo_async(image_format: str = "jpeg"):
+        return controller.photo(image_format)
+    controller.photo_async = AsyncMock(side_effect=_photo_async)
     return controller
 
 @pytest.fixture
@@ -231,13 +234,17 @@ async def focus_task_manager():
     task_manager = TaskManager()
     task_manager.autodiscover_tasks(
         namespaces=["openscan_firmware.controllers.services.tasks"],
-        include_subpackages=True,
-        ignore_modules={"base_task", "task_manager", "example_tasks"},
-        safe_mode=True,
+        extra_ignore_modules={"base_task", "task_manager", "example_tasks"},
         override_on_conflict=False,
-        require_explicit_name=True,
-        raise_on_missing_name=True,
     )
+
+    from openscan_firmware.controllers.services.tasks.examples import demo_examples
+
+    task_manager.register_task("hello_world_async_task", demo_examples.HelloWorldAsyncTask)
+    task_manager.register_task("hello_world_blocking_task", demo_examples.HelloWorldBlockingTask)
+    task_manager.register_task("exclusive_demo_task", demo_examples.ExclusiveDemoTask)
+    task_manager.register_task("generator_task", demo_examples.ExampleTaskWithGenerator)
+    task_manager.register_task("failing_task", demo_examples.FailingTask)
 
     yield task_manager
 
@@ -258,8 +265,8 @@ async def focus_task_manager():
     TaskManager._instance = None
 
 
-@pytest.fixture(autouse=True)
-def cleanup_task_manager_storage(
+@pytest_asyncio.fixture(autouse=True)
+async def cleanup_task_manager_storage(
     monkeypatch: pytest.MonkeyPatch,
     task_manager_storage_path,
 ):
@@ -280,10 +287,17 @@ def cleanup_task_manager_storage(
     if task_manager_instance is not None:
         pending_handles = list(getattr(task_manager_instance, "_running_async_tasks", {}).values())
         pending_handles += list(getattr(task_manager_instance, "_running_blocking_tasks", {}).values())
+
+        to_await: list[asyncio.Task] = []
         for handle in pending_handles:
             loop = handle.get_loop()
             if loop.is_closed():
                 continue
-            handle.cancel()
+            if not handle.done():
+                handle.cancel()
+            to_await.append(handle)
+
+        if to_await:
+            await asyncio.gather(*to_await, return_exceptions=True)
 
     TaskManager._instance = None
