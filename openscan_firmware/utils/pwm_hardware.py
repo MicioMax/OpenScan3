@@ -116,7 +116,7 @@ class _HwPWM:
 
         if pwm.exists():
             try:
-                _HwPWM.write(pwm / "enable", 0)
+                _HwPWM._write(pwm / "enable", 0)
             except:
                 pass
 
