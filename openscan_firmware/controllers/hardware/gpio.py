@@ -232,11 +232,15 @@ def cleanup_all_pins():
     pins_to_remove = list(_pwm_pins.keys()) # Create a copy of keys to iterate over
     for pin in pins_to_remove:
         try:
-            _pwm_pins[pin].close()
+            dev = _pwm_pins[pin]
+            if isinstance(dev, int):
+                hwpwm.release(dev)
+            else:
+                dev.close()
             del _pwm_pins[pin] # Remove from tracking dict after successful close
-            logger.debug(f"Output pin {pin} closed.")
+            logger.debug(f"PWM pin {pin} closed.")
         except Exception as e:
-            logger.error(f"Error closing output pin {pin}: {e}", exc_info=True)
+            logger.error(f"Error closing PWM pin {pin}: {e}", exc_info=True)
 
     # Close output pins
     pins_to_remove = list(_output_pins.keys()) # Create a copy of keys to iterate over
@@ -259,7 +263,10 @@ def cleanup_all_pins():
             logger.error(f"Error closing button on pin {pin}: {e}", exc_info=True)
 
     # Double check if dictionaries are empty
-    if not _output_pins and not _buttons:
+    if not _output_pins and not _pwm_pins and not _buttons:
         logger.info("GPIO cleanup successful. All tracked pins released.")
     else:
-        logger.warning(f"GPIO cleanup potentially incomplete. Remaining outputs: {list(_output_pins.keys())}, Remaining buttons: {list(_buttons.keys())}")
+        logger.warning(
+            f"GPIO cleanup potentially incomplete. Remaining outputs: {list(_output_pins.keys())}, "
+            f"Remaining PWM: {list(_pwm_pins.keys())}, Remaining buttons: {list(_buttons.keys())}"
+        )
