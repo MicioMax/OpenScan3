@@ -28,7 +28,7 @@ class LightController(SwitchableHardware, SleepCapableHardware):
             on_change=self._apply_settings_to_hardware
         )
         self._is_on = False
-        self._value = self.settings.pwm_max
+        self._value = 100.0
 
         # no idle callbacks
         self.is_idle = lambda: True
@@ -70,7 +70,7 @@ class LightController(SwitchableHardware, SleepCapableHardware):
             logger.info(f"Light '{self.model.name}' idle.")
             for pin in self.settings.pins:
                 if self.settings.pwm_support:
-                    gpio.set_pwm_pin(pin, self.settings.pwm_min)
+                    gpio.set_pwm_pin(pin, self.settings.pwm_min / 3.3)
                 else:
                     gpio.set_output_pin(pin, False)
         else:
@@ -121,6 +121,7 @@ class LightController(SwitchableHardware, SleepCapableHardware):
         else:
             self._value = value
         await self._wake_if_idle(HardwareEvent.LIGHT_EVENT)
+        schedule_device_status_broadcast([f"lights.{self.model.name}.value"])
         logger.info(f"Light '{self.model.name}' value set to {self._value}.")
 
 

@@ -14,6 +14,7 @@ router = APIRouter(
 class LightStatusResponse(BaseModel):
     name: str
     is_on: bool
+    value: float
     settings: LightConfig
 
 
