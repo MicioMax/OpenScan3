@@ -120,12 +120,7 @@ class LightController(SwitchableHardware, SleepCapableHardware):
             self._value = 100
         else:
             self._value = value
-        #resume from idle
-        if self.is_idle():
-            logger.info("Device idle, must exit before")
-            await self.send_event(HardwareEvent.LIGHT_EVENT)
-        else:
-            self.refresh()
+        await self._wake_if_idle(HardwareEvent.LIGHT_EVENT)
         logger.info(f"Light '{self.model.name}' value set to {self._value}.")
 
 
