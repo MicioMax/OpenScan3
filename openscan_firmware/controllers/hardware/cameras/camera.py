@@ -88,7 +88,9 @@ class CameraController(StatefulHardware):
 
     def _on_settings_change(self, settings: CameraSettings):
         self.camera.settings = settings
-        self._apply_settings_to_hardware(settings)
+        # Serialize settings updates with preview/photo hardware operations.
+        with self._hw_lock:
+            self._apply_settings_to_hardware(settings)
         schedule_device_status_broadcast([f"cameras.{self.camera.name}.settings"])
 
     def _apply_settings_to_hardware(self, settings: CameraSettings):
@@ -121,6 +123,7 @@ class CameraController(StatefulHardware):
         """
         handler = {
             "jpeg": self.capture_jpeg,
+            "raw": self.capture_dng,  # legacy implementation hook kept as capture_dng
             "dng": self.capture_dng,
             "rgb_array": self.capture_rgb_array,
             "yuv_array": self.capture_yuv_array,

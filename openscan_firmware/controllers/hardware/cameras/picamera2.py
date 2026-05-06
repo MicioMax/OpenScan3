@@ -287,9 +287,9 @@ class Picamera2Controller(CameraController):
 
             if self.settings.AF_window is not None:
                 x, y, w, h = self.settings.AF_window
-                af_window = _transform_settings_to_camera_coordinates(setting_coordinates=(x, y),
-                                                                      camera_resolution=(full_x, full_y),
-                                                                      setting_size=(w, h))
+                af_window = [_transform_settings_to_camera_coordinates(setting_coordinates=(x, y),
+                                                                       camera_resolution=(full_x, full_y),
+                                                                       setting_size=(w, h))]
             else:
                 # Default the focus window to the central 1% of the image
                 win_width = int(full_x * 0.1)
@@ -551,7 +551,7 @@ class Picamera2Controller(CameraController):
 
         self._configure_focus(camera_mode="preview")
 
-        logger.debug(f"Captured dng with metadata: {metadata}")
+        logger.debug(f"Captured dng with metadata: {camera_metadata}")
 
         self._set_busy(False)
 

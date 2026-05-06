@@ -11,32 +11,6 @@ from openscan_firmware.config.logger import setup_logging
 from openscan_firmware import __version__
 
 from openscan_firmware.routers import websocket as websocket_router
-from openscan_firmware.routers.v0_6 import (
-    cameras as cameras_v0_6,
-    motors as motors_v0_6,
-    lights as lights_v0_6,
-    projects as projects_v0_6,
-    gpio as gpio_v0_6,
-    openscan as openscan_v0_6,
-    device as device_v0_6,
-    tasks as tasks_v0_6,
-    develop as develop_v0_6,
-    cloud as cloud_v0_6,
-    focus_stacking as focus_stacking_v0_6,
-)
-from openscan_firmware.routers.v0_7 import (
-    cameras as cameras_v0_7,
-    motors as motors_v0_7,
-    lights as lights_v0_7,
-    projects as projects_v0_7,
-    gpio as gpio_v0_7,
-    openscan as openscan_v0_7,
-    device as device_v0_7,
-    tasks as tasks_v0_7,
-    develop as develop_v0_7,
-    cloud as cloud_v0_7,
-    focus_stacking as focus_stacking_v0_7,
-)
 from openscan_firmware.routers.v0_8 import (
     cameras as cameras_v0_8,
     motors as motors_v0_8,
@@ -50,11 +24,29 @@ from openscan_firmware.routers.v0_8 import (
     cloud as cloud_v0_8,
     focus_stacking as focus_stacking_v0_8,
 )
+# v0.9 routers
+from openscan_firmware.routers.v0_9 import (
+    cameras as cameras_v0_9,
+    motors as motors_v0_9,
+    lights as lights_v0_9,
+    firmware as firmware_v0_9,
+    projects as projects_v0_9,
+    gpio as gpio_v0_9,
+    openscan as openscan_v0_9,
+    device as device_v0_9,
+    tasks as tasks_v0_9,
+    develop as develop_v0_9,
+    cloud as cloud_v0_9,
+    focus_stacking as focus_stacking_v0_9,
+)
 # next routers
 from openscan_firmware.routers.next import (
     cameras as cameras_next,
+    external_trigger_runs as external_trigger_runs_next,
     motors as motors_next,
     lights as lights_next,
+    triggers as triggers_next,
+    firmware as firmware_next,
     projects as projects_next,
     gpio as gpio_next,
     openscan as openscan_next,
@@ -68,13 +60,52 @@ from openscan_firmware.controllers import device as device_controller
 
 from openscan_firmware.controllers.services.tasks.task_manager import get_task_manager
 from openscan_firmware.utils.firmware_state import handle_startup
+from openscan_firmware.config.firmware import get_firmware_settings
+from openscan_firmware.utils.wifi import is_network_ready_for_qr_scan
 
 
 logger = logging.getLogger(__name__)
 
 
+async def _maybe_start_qr_wifi_scan(task_manager) -> None:
+    """Start the QR WiFi scan task only when no usable network is connected.
+
+    This is called once during application startup.  The task runs indefinitely
+    in the background until a WiFi QR code is found or the task is cancelled.
+    """
+    firmware_settings = get_firmware_settings()
+
+    if not firmware_settings.qr_wifi_scan_enabled:
+        logger.info("QR WiFi scan is disabled in firmware settings – skipping auto-start.")
+        return
+
+    if not firmware_settings.camera_preview_enabled:
+        logger.info("Camera preview is disabled in firmware settings – skipping QR WiFi scan auto-start.")
+        return
+
+    if is_network_ready_for_qr_scan():
+        logger.info("Network is already connected (WiFi/LAN) – skipping QR WiFi scan auto-start.")
+        return
+
+    # Find the first available camera to use for scanning
+    from openscan_firmware.controllers.hardware.cameras.camera import get_all_camera_controllers
+    cameras = get_all_camera_controllers()
+    if not cameras:
+        logger.warning("No camera controllers available – cannot auto-start QR WiFi scan.")
+        return
+
+    camera_name = next(iter(cameras))
+    logger.info("No network connection detected. Starting QR WiFi scan task with camera '%s'.", camera_name)
+
+    try:
+        await task_manager.create_and_run_task("qr_scan_task", camera_name=camera_name)
+    except Exception:
+        logger.exception("Failed to auto-start QR WiFi scan task.")
+
+
 REQUIRED_CORE_TASKS = [
     "scan_task",
+    "external_trigger_run_task",
     "focus_stacking_task",
     "cloud_upload_task",
     "cloud_download_task",
@@ -118,6 +149,9 @@ async def lifespan(app: FastAPI):
     # Now that tasks are registered, restore any persisted tasks
     task_manager.restore_tasks_from_persistence()
 
+    # Auto-start QR WiFi scan if enabled and no network is connected
+    await _maybe_start_qr_wifi_scan(task_manager)
+
     yield  # application runs here
 
     # Code to run on shutdown
@@ -145,36 +179,6 @@ app.add_middleware(
 # Create versioned sub-apps and mount them under /vX.Y and /latest
 # Root app intentionally has no docs; each sub-app exposes its own docs.
 
-v0_6_ROUTERS = [
-    cameras_v0_6.router,
-    motors_v0_6.router,
-    lights_v0_6.router,
-    projects_v0_6.router,
-    gpio_v0_6.router,
-    openscan_v0_6.router,
-    device_v0_6.router,
-    tasks_v0_6.router,
-    develop_v0_6.router,
-    cloud_v0_6.router,
-    websocket_router.router,
-    focus_stacking_v0_6.router,
-]
-
-v0_7_ROUTERS = [
-    cameras_v0_7.router,
-    motors_v0_7.router,
-    lights_v0_7.router,
-    projects_v0_7.router,
-    gpio_v0_7.router,
-    openscan_v0_7.router,
-    device_v0_7.router,
-    tasks_v0_7.router,
-    develop_v0_7.router,
-    cloud_v0_7.router,
-    focus_stacking_v0_7.router,
-    websocket_router.router,
-]
-
 v0_8_ROUTERS = [
     cameras_v0_8.router,
     motors_v0_8.router,
@@ -194,22 +198,40 @@ next_ROUTERS = [
     cameras_next.router,
     motors_next.router,
     lights_next.router,
+    firmware_next.router,
     projects_next.router,
-    gpio_next.router,
     openscan_next.router,
     device_next.router,
     tasks_next.router,
+    gpio_next.router,
+    triggers_next.router,
+    external_trigger_runs_next.router,
     develop_next.router,
     cloud_next.router,
     websocket_router.router,
     focus_stacking_next.router,
 ]
 
+v0_9_ROUTERS = [
+    cameras_v0_9.router,
+    motors_v0_9.router,
+    lights_v0_9.router,
+    firmware_v0_9.router,
+    projects_v0_9.router,
+    gpio_v0_9.router,
+    openscan_v0_9.router,
+    device_v0_9.router,
+    tasks_v0_9.router,
+    develop_v0_9.router,
+    cloud_v0_9.router,
+    websocket_router.router,
+    focus_stacking_v0_9.router,
+]
+
 
 ROUTERS_BY_VERSION: dict[str, list] = {
-    "0.6": v0_6_ROUTERS,
-    "0.7": v0_7_ROUTERS,
     "0.8": v0_8_ROUTERS,
+    "0.9": v0_9_ROUTERS,
     "next": next_ROUTERS,
 }
 
@@ -272,13 +294,11 @@ def _use_route_names_as_operation_ids(app: FastAPI) -> None:
 
 # Supported API versions and latest alias
 # Define the supported API versions and explicitly set the latest alias.
-# We keep 0.6 for backwards compatibility but expose v0.7 as the /latest endpoints.
 SUPPORTED_VERSIONS = [
-    "0.6",
-    "0.7",
     "0.8",
+    "0.9",
 ]
-LATEST = "0.8"
+LATEST = "0.9"
 
 for v in SUPPORTED_VERSIONS:
     app.mount(f"/v{v}", make_version_app(v))
